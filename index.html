@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SOLO GAME RECORDS</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="setup-panel" aria-labelledby="setup-title">
+        <div>
+          <p class="eyebrow">League of Legends Double Elimination</p>
+          <h1 id="setup-title">SOLO GAME RECORDS</h1>
+          <nav class="app-nav" aria-label="页面切换">
+            <button type="button" class="nav-tab is-selected" data-page="create">创建比赛</button>
+            <button type="button" class="nav-tab" data-page="history">历史赛程</button>
+          </nav>
+        </div>
+
+        <form id="settings-form" class="settings-grid">
+          <label class="wide">
+            <span>赛事名称</span>
+            <input id="tournament-name" type="text" placeholder="例如：周末 Solo 双败赛 #1" />
+          </label>
+          <div class="rule-note">
+            <strong>双败淘汰制</strong>
+            <span>选手输满 2 场淘汰，最终剩余 1 人获胜</span>
+          </div>
+          <label>
+            <span>参与人数</span>
+            <input id="player-count" type="number" min="2" max="32" step="1" value="4" />
+          </label>
+          <label>
+            <span>单场目标分</span>
+            <input id="target-score" type="number" min="1" max="99" step="1" value="1" />
+          </label>
+          <label>
+            <span>比赛规则</span>
+            <select id="format-select">
+              <option value="round-robin">传统循环赛（最推荐）</option>
+              <option value="single-elimination">四人单败淘汰赛（效率最高）</option>
+              <option value="double-elimination" selected>双败淘汰</option>
+              <option value="swiss">瑞士轮</option>
+            </select>
+          </label>
+          <div class="wide">
+            <div class="field-head">
+              <span>选手名字</span>
+              <small>按参与人数逐个填写，留空会自动生成默认名字</small>
+            </div>
+            <div id="player-name-grid" class="player-name-grid"></div>
+          </div>
+          <div class="actions wide">
+            <button type="submit" class="primary">创建赛程</button>
+            <button type="button" id="reset-btn" class="secondary">清空当前比赛</button>
+          </div>
+        </form>
+      </section>
+
+      <div id="create-page" class="page-view">
+        <section class="summary-grid" aria-label="赛事概览">
+          <div class="metric">
+            <span>当前轮次</span>
+            <strong id="round-metric">-</strong>
+          </div>
+          <div class="metric">
+            <span>进行中</span>
+            <strong id="active-metric">0</strong>
+          </div>
+          <div class="metric">
+            <span>已晋级</span>
+            <strong id="advanced-metric">0</strong>
+          </div>
+          <div class="metric">
+            <span>已淘汰</span>
+            <strong id="eliminated-metric">0</strong>
+          </div>
+        </section>
+
+        <section class="workspace">
+          <aside class="standings-panel" aria-labelledby="standings-title">
+            <div class="panel-head">
+              <h2 id="standings-title">积分榜</h2>
+              <span id="save-status">未创建</span>
+            </div>
+            <div id="standings" class="standings"></div>
+          </aside>
+
+          <section class="round-panel" aria-labelledby="round-title">
+            <div class="panel-head">
+              <div>
+                <h2 id="round-title">赛程</h2>
+                <p id="round-note">创建赛程后开始记录。</p>
+              </div>
+              <button type="button" id="next-round-btn" class="primary" disabled>生成下一轮</button>
+            </div>
+            <div id="matches" class="schedule-board empty-state">暂无比赛</div>
+          </section>
+        </section>
+      </div>
+
+      <section id="history-page" class="history-panel page-view is-hidden" aria-labelledby="history-title">
+        <div class="panel-head">
+          <div>
+            <h2 id="history-title">历史对战记录</h2>
+            <p id="history-note">创建新赛程时，上一套完整赛程会自动归档到这里。</p>
+          </div>
+          <div id="history-filters" class="history-filters" aria-label="历史赛程概览"></div>
+        </div>
+        <div class="history-browser">
+          <aside>
+            <div id="history-list" class="history-list empty-state">暂无记录</div>
+            <div id="history-pagination" class="history-pagination"></div>
+          </aside>
+          <div id="history-detail" class="history-detail empty-state">请选择左侧赛程</div>
+        </div>
+      </section>
+    </main>
+
+    <template id="match-template">
+      <article class="match-card">
+        <div class="match-card__head">
+          <strong class="match-title"></strong>
+          <span class="record-label"></span>
+        </div>
+        <div class="player-row" data-side="a">
+          <div class="player-name"></div>
+          <input class="hero-input" type="text" placeholder="英雄" />
+          <input class="score-input" type="number" min="0" max="99" step="1" value="0" aria-label="A 方比分" />
+        </div>
+        <div class="player-row" data-side="b">
+          <div class="player-name"></div>
+          <input class="hero-input" type="text" placeholder="英雄" />
+          <input class="score-input" type="number" min="0" max="99" step="1" value="0" aria-label="B 方比分" />
+        </div>
+        <div class="match-actions">
+          <button type="button" class="winner-a secondary">A 胜</button>
+          <button type="button" class="winner-b secondary">B 胜</button>
+          <button type="button" class="clear-match ghost">重置</button>
+        </div>
+      </article>
+    </template>
+
+    <dialog id="password-dialog" class="password-dialog">
+      <form method="dialog" class="password-box">
+        <h2>删除历史赛程</h2>
+        <p>请输入删除密码。</p>
+        <input id="delete-password" type="password" autocomplete="off" />
+        <span id="delete-password-error" class="password-error"></span>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-delete" class="secondary">取消</button>
+          <button type="button" id="confirm-delete" class="primary">删除</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>
