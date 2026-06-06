@@ -899,9 +899,9 @@ function countArchivedStatuses(archive) {
 }
 
 async function deleteHistoryTournament(id, password) {
-  const deleted = await deleteRemoteHistory(id, password);
-  if (!deleted) {
-    window.alert("删除失败，请检查密码或网络。");
+  const result = await deleteRemoteHistory(id, password);
+  if (!result.ok) {
+    window.alert(result.message || "删除失败，请检查密码或网络。");
     return;
   }
   appData.history = appData.history.filter((archive) => archive.id !== id);
@@ -1027,14 +1027,14 @@ async function deleteRemoteHistory(id, password) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, password }),
     });
-    if (!response.ok) return false;
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, message: data.error || "删除失败，请检查密码或网络。" };
     if (Array.isArray(data.history)) {
       appData.history = data.history.map(normalizeTournament).filter(Boolean);
     }
-    return true;
+    return { ok: true };
   } catch {
-    return false;
+    return { ok: false, message: "删除失败，请检查网络连接。" };
   }
 }
 

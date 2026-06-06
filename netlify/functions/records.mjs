@@ -2,7 +2,8 @@ import { getStore } from "@netlify/blobs";
 
 const STORE_NAME = "solo-game-records";
 const HISTORY_KEY = "history";
-const DELETE_PASSWORD = process.env.DELETE_HISTORY_PASSWORD;
+const getDeletePassword = () =>
+  globalThis.Netlify?.env?.get("DELETE_HISTORY_PASSWORD") || process.env.DELETE_HISTORY_PASSWORD || "";
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -41,8 +42,9 @@ export default async (request) => {
 
     if (request.method === "DELETE") {
       const body = await request.json();
-      if (!DELETE_PASSWORD) return json({ error: "Delete password is not configured" }, 500);
-      if (body?.password !== DELETE_PASSWORD) return json({ error: "Invalid password" }, 403);
+      const deletePassword = getDeletePassword();
+      if (!deletePassword) return json({ error: "删除密码没有配置到 Netlify Functions 环境变量。" }, 500);
+      if (body?.password !== deletePassword) return json({ error: "删除密码不正确。" }, 403);
       if (!body?.id) return json({ error: "Missing id" }, 400);
       const history = await readHistory();
       const next = history.filter((record) => record.id !== body.id);
