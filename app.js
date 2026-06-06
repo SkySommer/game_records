@@ -1,6 +1,6 @@
 const STORAGE_KEY = "lol-solo-swiss-records";
+const RECORDS_API = "/.netlify/functions/records";
 const HISTORY_PAGE_SIZE = 10;
-const DELETE_PASSWORD = "Xx1234567890";
 const DOUBLE_ELIMINATION_LOSSES = 2;
 const FORMAT_COPY = {
   "round-robin": ["传统循环赛（最推荐）", "4 人单循环，每人打 3 场；3 轮 6 场，按胜场排名。"],
@@ -50,9 +50,9 @@ let currentPage = "create";
 let historyPageIndex = 1;
 let selectedHistoryId = appData.history[0]?.id || null;
 
-function createTournament(event) {
+async function createTournament(event) {
   event.preventDefault();
-  archiveCurrentTournament();
+  await archiveCurrentTournament();
   selectedHistoryId = appData.history[0]?.id || null;
   const count = clampNumber(els.playerCount.value, 2, 32);
   const targetScore = clampNumber(els.targetScore.value, 1, 99);
@@ -576,9 +576,9 @@ function renderHistoryListItem(archive, index) {
     renderHistory();
   });
   item.querySelector(".history-delete").addEventListener("click", async () => {
-    const authorized = await requestDeletePassword();
-    if (!authorized) return;
-    deleteHistoryTournament(archive.id);
+    const password = await requestDeletePassword();
+    if (!password) return;
+    deleteHistoryTournament(archive.id, password);
   });
   return item;
 }
@@ -898,7 +898,12 @@ function countArchivedStatuses(archive) {
   );
 }
 
-function deleteHistoryTournament(id) {
+async function deleteHistoryTournament(id, password) {
+  const deleted = await deleteRemoteHistory(id, password);
+  if (!deleted) {
+    window.alert("删除失败，请检查密码或网络。");
+    return;
+  }
   appData.history = appData.history.filter((archive) => archive.id !== id);
   const maxPage = Math.max(1, Math.ceil(appData.history.length / HISTORY_PAGE_SIZE));
   historyPageIndex = Math.min(historyPageIndex, maxPage);
@@ -928,15 +933,7 @@ function requestDeletePassword() {
       event.preventDefault();
       cleanup(false);
     };
-    const onConfirm = () => {
-      if (els.deletePassword.value === DELETE_PASSWORD) {
-        cleanup(true);
-        return;
-      }
-      els.deletePasswordError.textContent = "密码错误";
-      els.deletePassword.value = "";
-      els.deletePassword.focus();
-    };
+    const onConfirm = () => cleanup(els.deletePassword.value);
     const onKeydown = (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
@@ -983,6 +980,64 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
 }
 
+async function syncRemoteHistory() {
+  try {
+    const response = await fetch(RECORDS_API, { headers: { accept: "application/json" } });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!Array.isArray(data.history)) return;
+    const remoteHistory = data.history.map(normalizeTournament).filter(Boolean);
+    const remoteIds = new Set(remoteHistory.map((record) => record.id));
+    const localOnly = appData.history.filter((record) => !remoteIds.has(record.id));
+    appData.history = [...localOnly, ...remoteHistory].slice(0, 200);
+    for (const record of localOnly) {
+      await postRemoteHistory(record);
+    }
+    if (!selectedHistoryId || !appData.history.some((record) => record.id === selectedHistoryId)) {
+      selectedHistoryId = appData.history[0]?.id || null;
+    }
+    saveState();
+    renderHistory();
+  } catch {
+    // Local storage remains available when the cloud API is unreachable.
+  }
+}
+
+async function postRemoteHistory(record) {
+  try {
+    const response = await fetch(RECORDS_API, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ record }),
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (Array.isArray(data.history)) {
+      appData.history = data.history.map(normalizeTournament).filter(Boolean);
+    }
+  } catch {
+    // Keep the local archive if the cloud API is unreachable.
+  }
+}
+
+async function deleteRemoteHistory(id, password) {
+  try {
+    const response = await fetch(RECORDS_API, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, password }),
+    });
+    if (!response.ok) return false;
+    const data = await response.json();
+    if (Array.isArray(data.history)) {
+      appData.history = data.history.map(normalizeTournament).filter(Boolean);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function loadAppData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1000,14 +1055,16 @@ function loadAppData() {
   }
 }
 
-function archiveCurrentTournament() {
+async function archiveCurrentTournament() {
   if (!state || !state.rounds.length) return;
-  appData.history.unshift({
+  const record = {
     ...structuredClone(state),
     name: state.name || normalizeTournamentName("", state.format || "double-elimination"),
     archivedAt: new Date().toISOString(),
-  });
+  };
+  appData.history.unshift(record);
   appData.history = appData.history.slice(0, 200);
+  await postRemoteHistory(record);
 }
 
 function normalizeTournament(tournament) {
@@ -1087,3 +1144,4 @@ els.resetBtn.addEventListener("click", () => {
 
 setPage(currentPage);
 render();
+syncRemoteHistory();
