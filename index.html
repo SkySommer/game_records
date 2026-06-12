@@ -17,6 +17,7 @@
             <button type="button" class="nav-tab" data-page="history">历史赛程</button>
           </nav>
         </div>
+        <button type="button" id="admin-entry" class="admin-entry" data-page="admin">管理员</button>
 
         <form id="settings-form" class="settings-grid">
           <label class="wide">
@@ -35,11 +36,15 @@
             <span>单场目标分</span>
             <input id="target-score" type="number" min="1" max="99" step="1" value="1" />
           </label>
+          <label class="match-target-field">
+            <span>整场目标分</span>
+            <input id="match-target-score" type="number" min="1" max="99" step="1" value="3" />
+          </label>
           <label>
             <span>比赛规则</span>
             <select id="format-select">
-              <option value="round-robin">传统循环赛（最推荐）</option>
-              <option value="single-elimination">四人单败淘汰赛（效率最高）</option>
+              <option value="round-robin">传统循环赛</option>
+              <option value="single-elimination">四人单败淘汰赛</option>
               <option value="double-elimination" selected>双败淘汰</option>
               <option value="swiss">瑞士轮</option>
             </select>
@@ -47,7 +52,7 @@
           <div class="wide">
             <div class="field-head">
               <span>选手名字</span>
-              <small>按参与人数逐个填写，留空会自动生成默认名字</small>
+              <small>从预设名单中选择，不足人数可在管理员页面维护</small>
             </div>
             <div id="player-name-grid" class="player-name-grid"></div>
           </div>
@@ -108,12 +113,60 @@
           </div>
           <div id="history-filters" class="history-filters" aria-label="历史赛程概览"></div>
         </div>
+        <div class="view-tabs" role="tablist" aria-label="历史页面视图">
+          <button type="button" class="history-view-tab is-selected" data-history-view="schedule">赛程</button>
+          <button type="button" class="history-view-tab" data-history-view="stats">胜率</button>
+        </div>
         <div class="history-browser">
           <aside>
             <div id="history-list" class="history-list empty-state">暂无记录</div>
             <div id="history-pagination" class="history-pagination"></div>
           </aside>
           <div id="history-detail" class="history-detail empty-state">请选择左侧赛程</div>
+        </div>
+      </section>
+
+      <section id="admin-page" class="admin-panel page-view is-hidden" aria-labelledby="admin-title">
+        <div class="panel-head">
+          <div>
+            <h2 id="admin-title">管理员</h2>
+            <p id="admin-note">登录后可维护预设选手名单和删除历史赛程。</p>
+          </div>
+          <button type="button" id="admin-logout" class="secondary is-hidden">退出登录</button>
+        </div>
+
+        <form id="admin-login-form" class="admin-login">
+          <label>
+            <span>账号</span>
+            <input id="admin-username" type="text" autocomplete="username" />
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="admin-password" type="password" autocomplete="current-password" />
+          </label>
+          <button type="submit" class="primary">登录</button>
+          <span id="admin-login-error" class="password-error"></span>
+        </form>
+
+        <div id="admin-tools" class="admin-tools is-hidden">
+          <section class="admin-card">
+            <div class="field-head">
+              <span>预设选手名单</span>
+              <small>每行一个选手名，保存后创建赛程下拉框会同步更新</small>
+            </div>
+            <textarea id="admin-player-list" rows="8"></textarea>
+            <div class="actions">
+              <button type="button" id="save-player-list" class="primary">保存名单</button>
+            </div>
+          </section>
+
+          <section class="admin-card">
+            <div class="field-head">
+              <span>删除历史赛程</span>
+              <small>删除会同步到云端历史记录</small>
+            </div>
+            <div id="admin-history-list" class="admin-history-list empty-state">暂无记录</div>
+          </section>
         </div>
       </section>
     </main>
@@ -141,19 +194,6 @@
         </div>
       </article>
     </template>
-
-    <dialog id="password-dialog" class="password-dialog">
-      <form method="dialog" class="password-box">
-        <h2>删除历史赛程</h2>
-        <p>请输入删除密码。</p>
-        <input id="delete-password" type="password" autocomplete="off" />
-        <span id="delete-password-error" class="password-error"></span>
-        <div class="dialog-actions">
-          <button type="button" id="cancel-delete" class="secondary">取消</button>
-          <button type="button" id="confirm-delete" class="primary">删除</button>
-        </div>
-      </form>
-    </dialog>
 
     <script src="app.js"></script>
   </body>
