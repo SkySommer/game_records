@@ -54,6 +54,7 @@ const els = {
   adminPlayerList: document.querySelector("#admin-player-list"),
   savePlayerList: document.querySelector("#save-player-list"),
   adminHistoryList: document.querySelector("#admin-history-list"),
+  adminHistoryDetail: document.querySelector("#admin-history-detail"),
 };
 
 let appData = loadAppData();
@@ -64,6 +65,7 @@ let historyPageIndex = 1;
 let selectedHistoryId = appData.history[0]?.id || null;
 let selectedStatsPlayerName = null;
 let adminSession = null;
+let selectedAdminHistoryId = appData.history[0]?.id || null;
 
 function isLocalFrontend() {
   const host = window.location.hostname;
@@ -153,8 +155,8 @@ function buildNextRoundRobinRound() {
   const players = state.players;
   const nextNumber = state.rounds.length + 1;
   const roundCount = players.length % 2 === 0 ? players.length - 1 : players.length;
-  if (nextNumber > roundCount) return null;
-  const pairs = roundRobinPairs(players, nextNumber);
+  const cycleRound = ((nextNumber - 1) % roundCount) + 1;
+  const pairs = roundRobinPairs(players, cycleRound);
   return makeRound(
     nextNumber,
     `循环赛第 ${nextNumber} 轮`,
@@ -962,10 +964,6 @@ function championId() {
     const participants = state.rounds.length && state.rounds.every(isRoundComplete) ? singleEliminationParticipants() : [];
     return participants.length === 1 ? participants[0] : null;
   }
-  const roundRobinRoundCount = state.players.length % 2 === 0 ? state.players.length - 1 : state.players.length;
-  if ((state.format || "double-elimination") === "round-robin" && state.rounds.length === roundRobinRoundCount && state.rounds.every(isRoundComplete)) {
-    return [...state.players].sort(sortByRecordThenName)[0]?.id || null;
-  }
   if ((state.format || "double-elimination") === "swiss" && state.rounds.length === 3 && state.rounds.every(isRoundComplete)) {
     return [...state.players].sort(sortByRecordThenName)[0]?.id || null;
   }
@@ -1167,9 +1165,11 @@ async function deleteHistoryTournament(id) {
   const maxPage = Math.max(1, Math.ceil(appData.history.length / HISTORY_PAGE_SIZE));
   historyPageIndex = Math.min(historyPageIndex, maxPage);
   selectedHistoryId = appData.history[(historyPageIndex - 1) * HISTORY_PAGE_SIZE]?.id || appData.history[0]?.id || null;
+  selectedAdminHistoryId = appData.history[0]?.id || null;
   saveState();
   renderHistory();
   renderAdminHistoryList();
+  renderAdminHistoryDetail();
   window.alert("历史赛程已删除。");
 }
 
@@ -1203,7 +1203,11 @@ function renderAdmin() {
   els.adminLogout.classList.toggle("is-hidden", !signedIn);
   if (!signedIn) return;
   els.adminPlayerList.value = appData.settings.playerNames.join("\n");
+  if (!selectedAdminHistoryId || !appData.history.some((archive) => archive.id === selectedAdminHistoryId)) {
+    selectedAdminHistoryId = appData.history[0]?.id || null;
+  }
   renderAdminHistoryList();
+  renderAdminHistoryDetail();
 }
 
 function renderAdminHistoryList() {
@@ -1211,6 +1215,7 @@ function renderAdminHistoryList() {
   if (!appData.history.length) {
     els.adminHistoryList.className = "admin-history-list empty-state";
     els.adminHistoryList.textContent = "暂无记录";
+    renderAdminHistoryDetail();
     return;
   }
   els.adminHistoryList.className = "admin-history-list";
@@ -1218,17 +1223,167 @@ function renderAdminHistoryList() {
   appData.history.forEach((archive) => {
     const row = document.createElement("article");
     row.className = "admin-history-item";
+    row.classList.toggle("is-selected", archive.id === selectedAdminHistoryId);
     row.innerHTML = `
-      <div>
+      <button type="button" class="admin-history-select">
         <strong></strong>
         <span></span>
-      </div>
+      </button>
       <button type="button" class="history-delete">删除</button>
     `;
     row.querySelector("strong").textContent = archive.name || "未命名赛程";
     row.querySelector("span").textContent = `${formatDateTime(archive.archivedAt || archive.createdAt)} · ${archive.rounds.length} 轮 · ${flattenMatches(archive).length} 场`;
-    row.querySelector("button").addEventListener("click", () => deleteHistoryTournament(archive.id));
+    row.querySelector(".admin-history-select").addEventListener("click", () => {
+      selectedAdminHistoryId = archive.id;
+      renderAdminHistoryList();
+      renderAdminHistoryDetail();
+    });
+    row.querySelector(".history-delete").addEventListener("click", () => deleteHistoryTournament(archive.id));
     els.adminHistoryList.append(row);
+  });
+}
+
+function renderAdminHistoryDetail() {
+  if (!els.adminHistoryDetail || !adminSession) return;
+  const archive = appData.history.find((item) => item.id === selectedAdminHistoryId);
+  if (!archive) {
+    els.adminHistoryDetail.className = "admin-history-detail empty-state";
+    els.adminHistoryDetail.textContent = appData.history.length ? "请选择左侧赛程" : "暂无记录";
+    return;
+  }
+
+  els.adminHistoryDetail.className = "admin-history-detail";
+  els.adminHistoryDetail.innerHTML = "";
+  const form = document.createElement("form");
+  form.className = "admin-history-editor";
+  form.innerHTML = `
+    <div class="admin-history-editor__head">
+      <label>
+        <span>赛事名称</span>
+        <input class="admin-archive-name" type="text" />
+      </label>
+      <button type="submit" class="primary">保存赛程修改</button>
+    </div>
+    <div class="admin-edit-rounds"></div>
+  `;
+  form.querySelector(".admin-archive-name").value = archive.name || "";
+  const roundsEl = form.querySelector(".admin-edit-rounds");
+  archive.rounds.forEach((round) => roundsEl.append(renderAdminEditableRound(archive, round)));
+  form.addEventListener("submit", (event) => saveAdminHistoryEdit(event, archive.id));
+  els.adminHistoryDetail.append(form);
+}
+
+function renderAdminEditableRound(archive, round) {
+  const section = document.createElement("section");
+  section.className = "admin-edit-round";
+  section.innerHTML = `
+    <div class="history-round__title">
+      <strong></strong>
+      <span></span>
+    </div>
+    <div class="admin-edit-matches"></div>
+  `;
+  section.querySelector("strong").textContent = round.title || `第 ${round.number} 轮`;
+  section.querySelector("span").textContent = `${round.matches.length} 场`;
+  const list = section.querySelector(".admin-edit-matches");
+  round.matches.forEach((match) => list.append(renderAdminEditableMatch(archive, match)));
+  return section;
+}
+
+function renderAdminEditableMatch(archive, match) {
+  const playerA = findArchivedPlayer(archive, match.playerAId);
+  const playerB = findArchivedPlayer(archive, match.playerBId);
+  const item = document.createElement("article");
+  item.className = "admin-edit-match";
+  item.dataset.matchId = match.id;
+  item.innerHTML = `
+    <div class="history-item__meta">
+      <strong></strong>
+      <span></span>
+    </div>
+    <div class="admin-edit-player">
+      <strong></strong>
+      <label><span>英雄</span><input class="admin-hero-a" type="text" /></label>
+      <label><span>比分</span><input class="admin-score-a" type="number" min="0" max="99" step="1" /></label>
+    </div>
+    <div class="admin-edit-player">
+      <strong></strong>
+      <label><span>英雄</span><input class="admin-hero-b" type="text" /></label>
+      <label><span>比分</span><input class="admin-score-b" type="number" min="0" max="99" step="1" /></label>
+    </div>
+    <label class="admin-winner-field">
+      <span>胜者</span>
+      <select class="admin-winner"></select>
+    </label>
+  `;
+  item.querySelector(".history-item__meta strong").textContent = `${match.code || `桌 ${match.table}`} · ${match.title || "对局"}`;
+  item.querySelector(".history-item__meta span").textContent = match.bracket || "赛程";
+  item.querySelectorAll(".admin-edit-player strong")[0].textContent = playerA?.name || "A 方";
+  item.querySelectorAll(".admin-edit-player strong")[1].textContent = playerB?.name || "B 方";
+  item.querySelector(".admin-hero-a").value = match.heroA || "";
+  item.querySelector(".admin-hero-b").value = match.heroB || "";
+  item.querySelector(".admin-score-a").value = match.scoreA ?? 0;
+  item.querySelector(".admin-score-b").value = match.scoreB ?? 0;
+  const winnerSelect = item.querySelector(".admin-winner");
+  winnerSelect.append(new Option("胜者待定", ""));
+  if (playerA) winnerSelect.append(new Option(playerA.name, playerA.id));
+  if (playerB) winnerSelect.append(new Option(playerB.name, playerB.id));
+  winnerSelect.value = match.winnerId || "";
+  return item;
+}
+
+async function saveAdminHistoryEdit(event, archiveId) {
+  event.preventDefault();
+  if (!adminSession) return;
+  const archive = structuredClone(appData.history.find((item) => item.id === archiveId));
+  if (!archive) return;
+
+  archive.name = event.currentTarget.querySelector(".admin-archive-name").value.trim() || "未命名赛程";
+  event.currentTarget.querySelectorAll(".admin-edit-match").forEach((node) => {
+    const match = flattenMatches(archive).find(({ match }) => match.id === node.dataset.matchId)?.match;
+    if (!match) return;
+    match.heroA = node.querySelector(".admin-hero-a").value.trim();
+    match.heroB = node.querySelector(".admin-hero-b").value.trim();
+    match.scoreA = clampNumber(node.querySelector(".admin-score-a").value, 0, 99);
+    match.scoreB = clampNumber(node.querySelector(".admin-score-b").value, 0, 99);
+    match.winnerId = node.querySelector(".admin-winner").value || null;
+  });
+  recalculateArchivedTournament(archive);
+
+  const result = await updateRemoteHistory(archive, adminSession);
+  if (!result.ok) {
+    window.alert(result.message || "保存失败，请检查管理员账号或网络。");
+    return;
+  }
+  appData.history = appData.history.map((item) => (item.id === archive.id ? archive : item));
+  saveState();
+  renderHistory();
+  renderAdmin();
+  window.alert("历史赛程修改已保存。");
+}
+
+function recalculateArchivedTournament(archive) {
+  archive.players.forEach((player) => {
+    player.wins = 0;
+    player.losses = 0;
+    player.previousOpponents = [];
+    player.status = "active";
+  });
+  flattenMatches(archive).forEach(({ match }) => {
+    if (!match.winnerId) return;
+    const winner = findArchivedPlayer(archive, match.winnerId);
+    const loser = findArchivedPlayer(archive, loserId(match));
+    if (!winner || !loser) return;
+    winner.wins += 1;
+    loser.losses += 1;
+    winner.previousOpponents.push(loser.id);
+    loser.previousOpponents.push(winner.id);
+  });
+  const champion = archive.players.reduce((best, player) => (best && sortByRecordThenName(best, player) <= 0 ? best : player), null);
+  archive.players.forEach((player) => {
+    if (champion && player.id === champion.id && player.wins > 0) player.status = "advanced";
+    else if (player.losses >= (archive.settings?.eliminateLosses || DOUBLE_ELIMINATION_LOSSES)) player.status = "eliminated";
+    else player.status = "active";
   });
 }
 
@@ -1386,6 +1541,32 @@ async function deleteRemoteHistory(id, credentials) {
       return { ok: true };
     }
     return { ok: false, message: "删除失败，请检查网络连接。" };
+  }
+}
+
+async function updateRemoteHistory(record, credentials) {
+  if (isLocalFrontend() && isLocalAdmin(credentials)) {
+    appData.history = appData.history.map((archive) => (archive.id === record.id ? record : archive));
+    return { ok: true };
+  }
+  try {
+    const response = await fetch(`${RECORDS_API}?action=history`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...credentials, record }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, message: data.error || "保存失败，请检查管理员账号或网络。" };
+    if (Array.isArray(data.history)) {
+      appData.history = data.history.map(normalizeTournament).filter(Boolean);
+    }
+    return { ok: true };
+  } catch {
+    if (isLocalFrontend() && isLocalAdmin(credentials)) {
+      appData.history = appData.history.map((archive) => (archive.id === record.id ? record : archive));
+      return { ok: true };
+    }
+    return { ok: false, message: "保存失败，请检查网络连接。" };
   }
 }
 

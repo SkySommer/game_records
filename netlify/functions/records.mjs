@@ -95,6 +95,17 @@ export default async (request) => {
       return json({ settings: await writeSettings(body.settings || {}) });
     }
 
+    if (request.method === "PUT" && url.searchParams.get("action") === "history") {
+      const body = await request.json();
+      const adminError = assertAdmin(body);
+      if (adminError) return json({ error: adminError }, adminError.includes("没有配置") ? 500 : 403);
+      if (!body?.record?.id) return json({ error: "Missing record" }, 400);
+      const history = await readHistory();
+      const next = [body.record, ...history.filter((record) => record.id !== body.record.id)];
+      await writeHistory(next);
+      return json({ history: next.slice(0, 200) });
+    }
+
     if (request.method === "DELETE") {
       const body = await request.json();
       const adminError = assertAdmin(body);
